@@ -3,7 +3,6 @@ use std::io::Read;
 use std::{env, vec};
 mod emu;
 
-
 fn main() {
     let args: Vec<String> = env::args().collect();
 

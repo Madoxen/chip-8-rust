@@ -7,7 +7,7 @@ pub struct Chip8Emulator<D: display::Chip8Display> {
     index: u16,
     video_mem: [[bool; 32]; 64],
     running: bool,
-    display_dev: D 
+    display_dev: D,
 }
 
 const PROGRAM_MEMORY_OFFSET: usize = 0x200;
@@ -51,7 +51,7 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
             registers: [0; 16],
             index: 0,
             video_mem: [[false; 32]; 64],
-            display_dev
+            display_dev,
         }
     }
 
@@ -89,7 +89,7 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
             0x6 => self.registers[x as usize] = nn,
             0x7 => self.registers[x as usize] += nn,
             0xA => self.index = nnn,
-            0xD => self.display(x,y,n),
+            0xD => self.display(x, y, n),
             _ => todo!(),
         }
     }
@@ -98,27 +98,24 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
         self.display_dev.display([[false; 32]; 64]);
     }
 
-    fn display(&mut self, x_coord_beg : u8, y_coord_beg : u8, n_val : u8) {
+    fn display(&mut self, x_coord_beg: u8, y_coord_beg: u8, n_val: u8) {
         let x_coord = x_coord_beg % 64;
-        let y_coord: u8 = y_coord_beg % 32; 
-        //Set collision flag to 0 
+        let y_coord: u8 = y_coord_beg % 32;
+        //Set collision flag to 0
         self.registers[0xF] = 0;
 
-        for row_idx in 0..n_val
-        {
+        for row_idx in 0..n_val {
             let mem_idx = self.index as usize + row_idx as usize;
             let sprite_row = self.memory[mem_idx];
             for pix_idx in 0..7 {
                 let pix = sprite_row & (1 << pix_idx);
                 let x = (x_coord + pix_idx) as usize;
                 let y = (y_coord + row_idx) as usize;
-                if pix != 0
-                {
+                if pix != 0 {
                     if self.video_mem[x][y] != false {
                         self.video_mem[x][y] = false;
                         self.registers[0xF] = 1;
-                    }
-                    else {
+                    } else {
                         self.video_mem[x][y] = true;
                     }
                 }
