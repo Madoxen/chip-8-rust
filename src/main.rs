@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::Read;
 use std::{env, vec};
-pub mod chip8;
-pub mod chip8display;
+mod emu;
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -26,6 +26,6 @@ fn main() {
         })
         .collect();
 
-    let mut emu = chip8::Chip8Emulator::new(&program_bytes, chip8display::Chip8TerminalDisplay::new());
+    let mut emu = emu::Chip8Emulator::new(&program_bytes, emu::display::Chip8TerminalDisplay {});
     emu.run();
 }
