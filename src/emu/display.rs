@@ -1,5 +1,5 @@
 pub trait Chip8Display {
-    fn display(&self, data: [[bool; 32]; 64]);
+    fn display(&self, data: [[bool; 64]; 32]);
 }
 
 pub struct Chip8TerminalDisplay {}
@@ -17,7 +17,7 @@ impl Default for Chip8TerminalDisplay {
 }
 
 impl Chip8Display for Chip8TerminalDisplay {
-    fn display(&self, data: [[bool; 32]; 64]) {
+    fn display(&self, data: [[bool; 64]; 32]) {
         println!();
         data.iter().for_each(|row| {
             println!();

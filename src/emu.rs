@@ -5,7 +5,7 @@ pub struct Chip8Emulator<D: display::Chip8Display> {
     curr_instr: [u8; 2],
     registers: [u8; 16],
     index: u16,
-    video_mem: [[bool; 32]; 64],
+    video_mem: [[bool; 64]; 32],
     running: bool,
     display_dev: D,
 }
@@ -50,7 +50,7 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
             memory,
             registers: [0; 16],
             index: 0,
-            video_mem: [[false; 32]; 64],
+            video_mem: [[false; 64]; 32],
             display_dev,
         }
     }
@@ -95,12 +95,12 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
     }
 
     fn clear_screen(&mut self) {
-        self.display_dev.display([[false; 32]; 64]);
+        self.display_dev.display([[false; 64]; 32]);
     }
 
-    fn display(&mut self, x_coord_beg: u8, y_coord_beg: u8, n_val: u8) {
-        let x_coord = x_coord_beg % 64;
-        let y_coord: u8 = y_coord_beg % 32;
+    fn display(&mut self, vx: u8, vy: u8, n_val: u8) {
+        let x_coord = self.registers[vx as usize] % 64;
+        let y_coord: u8 = self.registers[vy as usize] % 32;
         //Set collision flag to 0
         self.registers[0xF] = 0;
 
@@ -111,12 +111,17 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
                 let pix = sprite_row & (1 << pix_idx);
                 let x = (x_coord + pix_idx) as usize;
                 let y = (y_coord + row_idx) as usize;
+
+                if x >= 64 {
+                    break;
+                }
+
                 if pix != 0 {
-                    if self.video_mem[x][y] != false {
-                        self.video_mem[x][y] = false;
+                    if self.video_mem[y][x] != false {
+                        self.video_mem[y][x] = false;
                         self.registers[0xF] = 1;
                     } else {
-                        self.video_mem[x][y] = true;
+                        self.video_mem[y][x] = true;
                     }
                 }
             }
