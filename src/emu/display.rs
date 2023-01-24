@@ -18,17 +18,17 @@ impl Default for Chip8TerminalDisplay {
 
 impl Chip8Display for Chip8TerminalDisplay {
     fn display(&self, data: [[bool; 64]; 32]) {
-        println!();
+        print!("{esc}c", esc = 27 as char);
+        print!("\r");
         data.iter().for_each(|row| {
             println!();
             row.iter().for_each(|pix| {
                 if *pix == true {
-                    print!("#");
+                    print!("\u{25A0}");
                 } else {
                     print!(" ");
                 }
             });
         });
-        println!();
     }
 }
