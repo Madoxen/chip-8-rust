@@ -114,7 +114,7 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
             let mem_idx = self.index as usize + row_idx as usize;
             let sprite_row = self.memory[mem_idx];
             for pix_idx in 0..8 {
-                let pix = sprite_row & (1u8 << pix_idx);
+                let pix = sprite_row & (0b10000000 >> pix_idx);
                 let x = (x_coord + pix_idx) as usize;
                 let y = (y_coord + row_idx) as usize;
 
