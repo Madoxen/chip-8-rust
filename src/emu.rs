@@ -72,8 +72,8 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
 
     fn decode(&mut self) {
         let op: u8 = (self.curr_instr[0] & 0b11110000) >> 4;
-        let x: u8 = self.curr_instr[0] & 0b00001111;
-        let y: u8 = (self.curr_instr[1] & 0b11110000) >> 4;
+        let x: usize = (self.curr_instr[0] & 0b00001111) as usize;
+        let y: usize = ((self.curr_instr[1] & 0b11110000) >> 4) as usize;
         let n: u8 = self.curr_instr[1] & 0b00001111;
 
         let nn: u8 = self.curr_instr[1];
@@ -95,35 +95,40 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
     }
 
     fn clear_screen(&mut self) {
-        self.display_dev.display([[false; 64]; 32]);
+        for y in 0..32 {
+            for x in 0..64 {
+                self.video_mem[y][x] = false;
+            }
+        }
+
+        self.display_dev.display(self.video_mem);
     }
 
-    fn display(&mut self, vx: u8, vy: u8, n_val: u8) {
-        let x_coord = self.registers[vx as usize] % 64;
-        let y_coord: u8 = self.registers[vy as usize] % 32;
+    fn display(&mut self, vx: usize, vy: usize, n_val: u8) {
+        let x_coord = self.registers[vx] % 64;
+        let y_coord: u8 = self.registers[vy] % 32;
         //Set collision flag to 0
         self.registers[0xF] = 0;
 
         for row_idx in 0..n_val {
             let mem_idx = self.index as usize + row_idx as usize;
             let sprite_row = self.memory[mem_idx];
-            for pix_idx in 0..7 {
-                let pix = sprite_row & (1 << pix_idx);
+            for pix_idx in 0..8 {
+                let pix = sprite_row & (1u8 << pix_idx);
                 let x = (x_coord + pix_idx) as usize;
                 let y = (y_coord + row_idx) as usize;
 
-                if x >= 64 {
+                if x >= 64 || y >= 32 {
                     break;
                 }
 
                 if pix != 0 {
                     if self.video_mem[y][x] != false {
-                        self.video_mem[y][x] = false;
                         self.registers[0xF] = 1;
-                    } else {
-                        self.video_mem[y][x] = true;
                     }
                 }
+                
+                self.video_mem[y][x] ^= pix != 0;
             }
         }
 
