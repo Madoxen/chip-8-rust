@@ -6,7 +6,7 @@ pub struct Chip8Emulator<D: display::Chip8Display> {
     curr_instr: [u8; 2],
     registers: [u8; 16],
     stack: Vec<usize>,
-    index: u16,
+    index: usize,
     video_mem: [[bool; 64]; 32],
     running: bool,
     display_dev: D,
@@ -92,11 +92,11 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
                     0xE => match n {
                         0x0 => self._00E0_cls(),
                         0xE => self._00EE_ret(),
-                        _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+                        _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n),
                     },
-                    _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+                    _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n),
                 },
-                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n),
             },
             0x1 => self._1NNN_jump(nnn),
             0x2 => self._2NNN_call(nnn),
@@ -104,7 +104,7 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
             0x4 => self._4XNN_skip(val_x, nn),
             0x5 => match n {
                 0x0 => self._5XY0_skip(val_x, val_y),
-                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n),
             },
             0x6 => self.registers[x as usize] = nn,
             0x7 => self._7XNN_add(x, nn),
@@ -118,15 +118,22 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
                 0x6 => self._8XY6_rshift(x, y),
                 0x7 => self._8XY7_sub_rev(x, y),
                 0xE => self._8XYE_lshift(x, y),
-                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+
+                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n),
             },
             0x9 => match n {
                 0x0 => self._9XY0_skip(val_x, val_y),
-                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n),
             },
-            0xA => self.index = nnn,
+            0xA => self.index = nnn as usize,
             0xD => self._DXYN_disp(x, y, n),
-            _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+            0xF => match nn {
+                0x33 => self._FX33_conv(val_x),
+                0x55 => self._FX55_store(x),
+                0x65 => self._FX65_load(x),
+                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n),
+            },
+            _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n),
         }
     }
 
@@ -263,7 +270,6 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
         self.pc = nnn as usize + self.registers[0] as usize;
     }
 
-
     fn _DXYN_disp(&mut self, vx: usize, vy: usize, n_val: u8) {
         let x_coord = self.registers[vx] % 64;
         let y_coord: u8 = self.registers[vy] % 32;
@@ -271,7 +277,7 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
         self.registers[0xF] = 0;
 
         for row_idx in 0..n_val {
-            let mem_idx = self.index as usize + row_idx as usize;
+            let mem_idx = self.index + row_idx as usize;
             let sprite_row = self.memory[mem_idx];
             for pix_idx in 0..8 {
                 let pix = sprite_row & (0b10000000 >> pix_idx);
@@ -293,5 +299,38 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
         }
 
         self.display_dev.display(self.video_mem);
+    }
+
+    /// Store BCD representation of Vx in memory locations I, I+1, and I+2.
+    /// The interpreter takes the decimal value of Vx,
+    /// and places the hundreds digit in memory at location in I,
+    /// the tens digit at location I+1, and the ones digit at location I+2.
+    fn _FX33_conv(&mut self, val_x: u8) {
+        
+        let i = self.index;
+        self.memory[i] = val_x / 100 % 10; 
+        self.memory[i+1] = val_x / 10 % 10; 
+        self.memory[i+2] = val_x % 10; 
+    }
+
+    /// FX55, the value of each variable register from V0 to VX inclusive
+    /// (if X is 0, then only V0) will be stored in successive memory addresses,
+    /// starting with the one that’s stored in I.
+    /// V0 will be stored at the address in I,
+    /// V1 will be stored in I + 1, and so on, until VX is stored in I + X.
+    fn _FX55_store(&mut self, x: usize) {
+        for i in 0..(x + 1) {
+            let idx = self.index + i;
+            self.memory[idx] = self.registers[i];
+        }
+    }
+
+    /// FX65, loads data to the V0-VX (inclusive) registers from memory starting at
+    /// address stored at I
+    fn _FX65_load(&mut self, x: usize) {
+        for i in 0..(x + 1) {
+            let idx = self.index + i;
+            self.registers[i] = self.memory[idx];
+        }
     }
 }
