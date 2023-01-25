@@ -1,9 +1,11 @@
 pub mod display;
+use std::num::Wrapping;
 pub struct Chip8Emulator<D: display::Chip8Display> {
     memory: [u8; 4096],
     pc: usize,
     curr_instr: [u8; 2],
     registers: [u8; 16],
+    stack: Vec<usize>,
     index: u16,
     video_mem: [[bool; 64]; 32],
     running: bool,
@@ -52,6 +54,7 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
             index: 0,
             video_mem: [[false; 64]; 32],
             display_dev,
+            stack: vec![],
         }
     }
 
@@ -80,21 +83,54 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
         //produce nnn => 0bxxxxNNNNNNNN
         let nnn: u16 = 0x0 | (x as u16) << 8 | (nn as u16);
 
+        let val_x: u8 = self.registers[x];
+        let val_y: u8 = self.registers[y];
+
         match op {
-            0x0 => match y {
-                0xE => self.clear_screen(),
-                _ => todo!(),
+            0x0 => match x {
+                0x0 => match y {
+                    0xE => match n {
+                        0x0 => self._00E0_cls(),
+                        0xE => self._00EE_ret(),
+                        _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+                    },
+                    _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+                },
+                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
             },
-            0x1 => self.pc = nnn as usize,
+            0x1 => self._1NNN_jump(nnn),
+            0x2 => self._2NNN_call(nnn),
+            0x3 => self._3XNN_skip(val_x, nn),
+            0x4 => self._4XNN_skip(val_x, nn),
+            0x5 => match n {
+                0x0 => self._5XY0_skip(val_x, val_y),
+                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+            },
             0x6 => self.registers[x as usize] = nn,
-            0x7 => self.registers[x as usize] += nn,
+            0x7 => self._7XNN_add(x, nn),
+            0x8 => match n {
+                0x0 => self._8XY0_set(x, y),
+                0x1 => self._8XY1_or(x, y),
+                0x2 => self._8XY2_and(x, y),
+                0x3 => self._8XY3_xor(x, y),
+                0x4 => self._8XY4_add(x, y),
+                0x5 => self._8XY5_sub(x, y),
+                0x6 => self._8XY6_rshift(x, y),
+                0x7 => self._8XY7_sub_rev(x, y),
+                0xE => self._8XYE_lshift(x, y),
+                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+            },
+            0x9 => match n {
+                0x0 => self._9XY0_skip(val_x, val_y),
+                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
+            },
             0xA => self.index = nnn,
-            0xD => self.display(x, y, n),
-            _ => todo!(),
+            0xD => self._DXYN_disp(x, y, n),
+            _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n)
         }
     }
 
-    fn clear_screen(&mut self) {
+    fn _00E0_cls(&mut self) {
         for y in 0..32 {
             for x in 0..64 {
                 self.video_mem[y][x] = false;
@@ -104,7 +140,131 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
         self.display_dev.display(self.video_mem);
     }
 
-    fn display(&mut self, vx: usize, vy: usize, n_val: u8) {
+    fn _00EE_ret(&mut self) {
+        let npc = match self.stack.pop() {
+            Some(v) => v,
+            None => panic!("FATAL: tried to return while stack being empty"),
+        };
+        self.pc = npc;
+    }
+
+    fn _1NNN_jump(&mut self, nnn: u16) {
+        self.pc = nnn as usize
+    }
+
+    fn _2NNN_call(&mut self, nnn: u16) {
+        self.stack.push(self.pc);
+        self.pc = nnn as usize
+    }
+
+    fn _3XNN_skip(&mut self, val_x: u8, nn: u8) {
+        if val_x == nn {
+            self.pc += 2;
+        }
+    }
+
+    fn _4XNN_skip(&mut self, val_x: u8, nn: u8) {
+        if val_x != nn {
+            self.pc += 2;
+        }
+    }
+
+    fn _5XY0_skip(&mut self, val_x: u8, val_y: u8) {
+        if val_x == val_y {
+            self.pc += 2;
+        }
+    }
+
+    fn _9XY0_skip(&mut self, val_x: u8, val_y: u8) {
+        if val_x != val_y {
+            self.pc += 2;
+        }
+    }
+
+    fn _7XNN_add(&mut self, x: usize, nn: u8) {
+        let x_val = Wrapping(self.registers[x]);
+        let nn = Wrapping(nn);
+
+        self.registers[x] = (x_val + nn).0;
+    }
+
+    fn _8XY0_set(&mut self, x: usize, y: usize) {
+        self.registers[x] = self.registers[y];
+    }
+
+    fn _8XY1_or(&mut self, x: usize, y: usize) {
+        self.registers[x] |= self.registers[y];
+    }
+
+    fn _8XY2_and(&mut self, x: usize, y: usize) {
+        self.registers[x] &= self.registers[y];
+    }
+
+    fn _8XY3_xor(&mut self, x: usize, y: usize) {
+        self.registers[x] ^= self.registers[y];
+    }
+
+    fn _8XY4_add(&mut self, x: usize, y: usize) {
+        let x_val = self.registers[x];
+        let y_val = self.registers[y];
+
+        //Detect overflow
+        //check if x + y > 255
+        self.registers[0xF] = 0;
+        if y_val > u8::MAX - x_val || x_val > u8::MAX - y_val {
+            self.registers[0xF] = 1
+        }
+
+        self.registers[x] = (Wrapping(self.registers[x]) + Wrapping(self.registers[y])).0;
+    }
+
+    fn _8XY5_sub(&mut self, x: usize, y: usize) {
+        let x_val = self.registers[x];
+        let y_val = self.registers[y];
+
+        //Detect overflow
+        //check if x - y < 0
+        // x < y
+        self.registers[0xF] = 1;
+        if x_val < y_val {
+            self.registers[0xF] = 0;
+        }
+
+        self.registers[x] = (Wrapping(self.registers[x]) + Wrapping(self.registers[y])).0;
+    }
+
+    fn _8XY6_rshift(&mut self, x: usize, y: usize) {
+        //Set F register to the shifted out bit value
+        self.registers[0xF] = self.registers[x] & 1;
+        self.registers[x] >>= 1;
+    }
+
+    fn _8XY7_sub_rev(&mut self, x: usize, y: usize) {
+        let x_val = self.registers[x];
+        let y_val = self.registers[y];
+
+        //Detect overflow
+        //check if y < x
+        self.registers[0xF] = 1;
+        if y_val < x_val {
+            self.registers[0xF] = 0;
+        }
+
+        self.registers[y] -= self.registers[x];
+    }
+
+    fn _8XYE_lshift(&mut self, x: usize, y: usize) {
+        //Set F register to the shifted out bit value
+        self.registers[0xF] = (self.registers[x] & 0b10000000) >> 7;
+        self.registers[x] <<= 1;
+    }
+
+    fn _BNNN_jumpoff(&mut self, nnn: u16) {
+        self.pc = nnn as usize + self.registers[0] as usize;
+    }
+
+
+    fn _DXYN_disp(&mut self, vx: usize, vy: usize, n_val: u8) {
         let x_coord = self.registers[vx] % 64;
         let y_coord: u8 = self.registers[vy] % 32;
         //Set collision flag to 0
@@ -127,7 +287,7 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
                         self.registers[0xF] = 1;
                     }
                 }
-                
+
                 self.video_mem[y][x] ^= pix != 0;
             }
         }
