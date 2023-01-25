@@ -1,4 +1,5 @@
 pub mod display;
+use rand::prelude::*;
 use std::num::Wrapping;
 pub struct Chip8Emulator<D: display::Chip8Display> {
     memory: [u8; 4096],
@@ -126,6 +127,8 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
                 _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n),
             },
             0xA => self.index = nnn as usize,
+            0xB => self._BNNN_jumpoff(nnn),
+            0xC => self._CXNN_rand(x, nn),
             0xD => self._DXYN_disp(x, y, n),
             0xF => match nn {
                 0x33 => self._FX33_conv(val_x),
@@ -268,6 +271,12 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
 
     fn _BNNN_jumpoff(&mut self, nnn: u16) {
         self.pc = nnn as usize + self.registers[0] as usize;
+    }
+
+    fn _CXNN_rand(&mut self, x: usize, nn: u8) {
+        let mut r = rand::random::<u8>();
+        r &= nn;
+        self.registers[x] = r;
     }
 
     fn _DXYN_disp(&mut self, vx: usize, vy: usize, n_val: u8) {
