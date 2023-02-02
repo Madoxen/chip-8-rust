@@ -14,7 +14,7 @@ fn main() {
     let rom_path = &args[1];
     let f = match File::open(rom_path) {
         Ok(v) => v,
-        Err(v) => panic!("Could not open file: {}", v.to_string()),
+        Err(v) => panic!("Could not open file: {}", v),
     };
 
     let program_bytes: Vec<u8> = f
