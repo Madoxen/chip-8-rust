@@ -26,5 +26,5 @@ fn main() {
         .collect();
 
     let mut emu = emu::Chip8Emulator::new(&program_bytes, emu::display::Chip8TerminalDisplay {});
-    emu.run();
+    emu.run(700);
 }

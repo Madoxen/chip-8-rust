@@ -1,11 +1,9 @@
 pub mod display;
 use core::time;
-use std::io::Error;
 use getch::Getch;
-use rand::prelude::*;
+use std::collections::HashMap;
+use std::io::Error;
 use std::num::Wrapping;
-use std::sync::atomic::AtomicU8;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, sleep, sleep_ms, JoinHandle};
@@ -22,7 +20,7 @@ pub struct Chip8Emulator<D: display::Chip8Display> {
     display_dev: D,
     delay_timer: Arc<Mutex<u8>>,
     sound_timer: Arc<Mutex<u8>>,
-    keyboard_channel: Option<Receiver<Result<u8, Error>>>,
+    keyboard_channel: Option<Receiver<u8>>,
 }
 
 const PROGRAM_MEMORY_OFFSET: usize = 0x200;
@@ -70,23 +68,28 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
             stack: vec![],
             delay_timer: Arc::new(Mutex::new(0)),
             sound_timer: Arc::new(Mutex::new(0)),
-            keyboard_channel: None
+            keyboard_channel: None,
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self, speed: u64) {
         //start timer thread
         self.running = true;
         let delay_timer = Arc::clone(&self.delay_timer);
         let sound_timer = Arc::clone(&self.sound_timer);
+
         let timer_join_handle = thread::spawn(move || {
             loop {
                 //Open scope for earlier dropping
                 {
                     let mut delay_timer = delay_timer.lock().unwrap();
                     let mut sound_timer = sound_timer.lock().unwrap();
-                    *delay_timer += 1;
-                    *sound_timer += 1;
+                    if *delay_timer > 0 {
+                        *delay_timer -= 1;
+                    }
+                    if *sound_timer > 0 {
+                        *sound_timer -= 1;
+                    }
                 }
                 sleep(time::Duration::from_millis(16));
             }
@@ -95,17 +98,46 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
         let (tx, rx) = channel();
         self.keyboard_channel = Some(rx);
 
-        let keyboard_join_handle = thread::spawn(move || loop {
+        let keyboard_join_handle = thread::spawn(move || {
+            let key_map = HashMap::from([
+                (49, 0x1),
+                (50, 0x2),
+                (51, 0x3),
+                (52, 0xC),
+                (113, 0x4),
+                (119, 0x5),
+                (101, 0x6),
+                (114, 0xD),
+                (97, 0x7),
+                (115, 0x8),
+                (100, 0x9),
+                (102, 0xE),
+                (122, 0xA),
+                (120, 0x0),
+                (99, 0xB),
+                (118, 0xF),
+            ]);
+
             let g = Getch::new();
-            match tx.send(g.getch()) {
-                Ok(_) => (),
-                Err(_) => println!("Keyboard Thread: TX failed, no data will be sent"),
-            };
+            loop {
+               
+                let val = g.getch().unwrap();
+                let key_code = match key_map.get(&val) {
+                    Some(v) => v,
+                    None => continue,
+                };
+
+                match tx.send(*key_code) {
+                    Ok(_) => (),
+                    Err(_) => println!("Keyboard Thread: TX failed, no data will be sent"),
+                };
+            }
         });
 
         while self.running {
             self.fetch();
             self.decode();
+            sleep(time::Duration::from_millis(1000 / speed))
         }
 
         keyboard_join_handle.join();
@@ -175,10 +207,17 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
             0xB => self.op_bnnn_jumpoff(nnn),
             0xC => self.op_cxnn_rand(x, nn),
             0xD => self.op_dxyn_disp(x, y, n),
+            0xE => match nn {
+                0x9E => self.op_ex9e_skipkey(val_x),
+                0xA1 => self.op_exa1_skipkey(val_x),
+                _ => panic!("No opcode 0x{:x}{:x}{:x}{:x}", op, x, y, n),
+            },
             0xF => match nn {
+                0x0A => self.op_fx0a_get_key(x),
                 0x15 => self.op_fx15_set_delay(val_x),
                 0x18 => self.op_fx18_set_sound(val_x),
                 0x07 => self.op_fx07_xtdtime(x),
+                0x29 => self.op_fx29_font(val_x),
                 0x33 => self.op_fx33_conv(val_x),
                 0x55 => self.op_fx55_store(x),
                 0x65 => self.op_fx65_load(x),
@@ -359,6 +398,38 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
         self.display_dev.display(self.video_mem);
     }
 
+    fn op_ex9e_skipkey(&mut self, val_x: u8) {
+        let rx = match &self.keyboard_channel {
+            Some(v) => v,
+            None => panic!("Keyboard channel does not exist, program cannot continue, aborting."),
+        };
+
+        let key = match rx.try_recv() {
+            Ok(v) => Some(v),
+            Err(_) => None,
+        };
+
+        if key == Some(val_x) {
+            self.pc += 2;
+        }
+    }
+
+    fn op_exa1_skipkey(&mut self, val_x: u8) {
+        let rx = match &self.keyboard_channel {
+            Some(v) => v,
+            None => panic!("Keyboard channel does not exist, program cannot continue, aborting."),
+        };
+
+        let key = match rx.try_recv() {
+            Ok(v) => Some(v),
+            Err(_) => None,
+        };
+
+        if key != Some(val_x) {
+            self.pc += 2;
+        }
+    }
+
     fn op_fx07_xtdtime(&mut self, x: usize) {
         let delay_timer_val = *self.delay_timer.lock().unwrap();
         self.registers[x] = delay_timer_val;
@@ -370,12 +441,12 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
             None => panic!("Keyboard channel does not exist, program cannot continue, aborting."),
         };
 
-        self.registers[x] = match rx.recv() {
-            Ok(v) => match v {
-                Ok(keycode) => keycode,
-                Err(_) => todo!(),
-            },
-            Err(_) => todo!(),
+        self.registers[x] = match rx.try_recv() {
+            Ok(v) => v,
+            Err(_) => {
+                self.pc -= 2;
+                self.registers[x] //do nothing with value 
+            } //loop on unreceived
         };
     }
 
@@ -392,6 +463,10 @@ impl<D: display::Chip8Display> Chip8Emulator<D> {
     fn op_fx1e_add_idx(&mut self, val_x: u8) {
         self.index += val_x as usize;
         self.registers[0xF] = if self.index > 0x0F00 { 1 } else { 0 };
+    }
+
+    fn op_fx29_font(&mut self, val_x: u8) {
+        self.index = val_x as usize * 5;
     }
     /// Store BCD representation of Vx in memory locations I, I+1, and I+2.
     /// The interpreter takes the decimal value of Vx,

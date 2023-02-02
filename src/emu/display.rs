@@ -3,6 +3,7 @@ pub trait Chip8Display {
 }
 
 pub struct Chip8TerminalDisplay {}
+pub struct Chip8NullDisplay {}
 
 impl Chip8TerminalDisplay {
     pub fn new() -> Self {
@@ -30,5 +31,12 @@ impl Chip8Display for Chip8TerminalDisplay {
                 }
             });
         });
+    }
+}
+
+
+impl Chip8Display for Chip8NullDisplay {
+    fn display(&self, data: [[bool; 64]; 32]) {
+        
     }
 }
